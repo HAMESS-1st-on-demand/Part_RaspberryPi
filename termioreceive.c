@@ -26,7 +26,7 @@ int main() {
 
     // 통신 설정 가져오기
     tcgetattr(uart_fd, &options);
-    options.c_cflag = B115200 | CS5 | CLOCAL | CREAD; // Baud rate 설정: 115200, 8-bit, 지역 연결, 데이터 수신 허용
+    options.c_cflag = B9600 | CS5 | CLOCAL | CREAD; // Baud rate 설정: 115200, 8-bit, 지역 연결, 데이터 수신 허용
     options.c_iflag = IGNPAR; // Parity 오류 무시
     options.c_oflag = 0;
     options.c_lflag = 0;
