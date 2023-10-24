@@ -9,7 +9,7 @@ set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})
 include(CPack)
 
 # add_executable(Proj1 Serial_test1.c)
- add_executable(Proj1 thread1.c)
+ add_executable(Proj1 thread4.c)
 # add_executable(Proj1 termioreceive.c)
 target_link_libraries(Proj1 wiringPi)
 target_link_libraries(Proj1 bcm2835)
