@@ -7,7 +7,7 @@
 
 int main() {
 
-    int setting = system("sudo chmod 666 /dev/ttyS0");
+    int setting = system("sudo chmod 666 /dev/ttyACM0"); // ttyACM0이 usb로 통신하는 것, ttyS0가 tx, rx port로 통신하는 것
 
     if(setting == -1)
     {
@@ -18,7 +18,7 @@ int main() {
     struct termios options;
 
     // UART 포트 열기
-    uart_fd = open("/dev/ttyS0", O_RDWR | O_NOCTTY | O_NDELAY);
+    uart_fd = open("/dev/ttyACM0", O_RDWR | O_NOCTTY | O_NDELAY);
     if (uart_fd == -1) {
         perror("Error - Unable to open UART");
         return 1;
@@ -44,16 +44,10 @@ int main() {
         // 데이터 수신
         char rx_buffer[256] = {0};
         int rx_length = read(uart_fd, rx_buffer, sizeof(rx_buffer) - 1); // -1을 해줘서 NULL 종료 문자 공간 확보
-        // if (rx_length < 0) {
-        // perror("UART RX error");
-        // } else if (rx_length == 0) {
-        // printf("No data received.\n");
-        // } else {
         if(rx_length > 0){
             rx_buffer[rx_length] = '\0'; // 문자열 종료
             printf("Received %d bytes: %s\n", rx_length, rx_buffer);
         }
-        // printf("Run rx_length : %d , bytes : %s\n", rx_length, rx_buffer);
     }
 
     // UART 포트 닫기

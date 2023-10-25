@@ -56,7 +56,6 @@ dkms.conf
 build/
 *.txt
 .vscode/settings.json
-integration/test1.c
 serial_with_raspberry/termiouart.c
 serial_with_raspberry/termiouart2.c
 serial_with_raspberry/termiouart3.c
