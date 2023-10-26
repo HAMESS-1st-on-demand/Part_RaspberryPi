@@ -3,23 +3,9 @@
 #include <wiringPi.h>
 #include <wiringPiSPI.h>
 
-//센서별 임계값
-#define LIGHT_TH 200
-#define RAIN_TH 1700
-#define WATERLEV_TH 2800
-#define DUST_TH 2000
-
-
-
 int main(void){
     int now;
     int lightTime, rainTime, dustTime, waterTime, temperTime;
-    //센서별 체크 주기
-    int lightPeriod = 500;
-    int rainPeriod = 1000;
-    int dustPeriod = 1500;
-    int waterPeriod = 2000;
-    int temperPeriod = 3000;
 
     //wiringPi init함수
     if(setWiringPi()==-1) {
@@ -34,7 +20,7 @@ int main(void){
         now = millis();
 
         //각 주기 이상의 시간이 되면 센서값 측정 후 비교
-        if(now - waterTime>=waterPeriod) //수위 감지센서
+        if(now - waterTime>=WATERLEV_PER) //수위 감지센서
         {
             waterTime = now;
             int waterLev = readWaterLevelSensor();
@@ -46,7 +32,7 @@ int main(void){
             }
         }
 
-        if(now - lightTime>=lightPeriod) //조도 센서
+        if(now - lightTime>=LIGHT_PER) //조도 센서
         {
             lightTime = now;
             int light = readLightSensor();
@@ -57,7 +43,7 @@ int main(void){
             }
         }
 
-        if(now - rainTime>=rainPeriod) //비 센서
+        if(now - rainTime>=RAIN_PER) //비 센서
         {
             rainTime =now;
             int rain = readRainSensor();
@@ -69,7 +55,7 @@ int main(void){
             }
         }
 
-        if(now - dustTime>=dustPeriod) //미세먼지센서
+        if(now - dustTime>=DUST_PER) //미세먼지센서
         {
             dustTime=now;
             int dust = readDustSensor();
@@ -81,7 +67,7 @@ int main(void){
             }
         }
 
-        if(now - temperTime>=temperPeriod) //온습도 센서
+        if(now - temperTime>=TEMPER_PER) //온습도 센서
         {
             temperTime = now;
             int temper1 = readDHTSensor(DHT_PIN1);        // 10번 핀으로부터 데이터를 읽음 -> 실내온도
@@ -93,11 +79,11 @@ int main(void){
             }
             printf("[%d] temper1 = %d, temper2 = %d \n", now/10000,temper1,temper2);
 
-            if(temper1<temper2&&temper2>30){ //판단
+            if(temper1<temper2&&temper2>TEMPER_TH1){ //판단
                 printf("썬루프 닫아");
                 buffer |= 1<<1; //buffer: 00010
             }
-            else if(temper1>temper2&&temper1>40){
+            else if(temper1>temper2&&temper1>TEMPER_TH2){
                 printf("썬루프 열어");
                 buffer |= 1; 
             }

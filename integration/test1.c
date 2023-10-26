@@ -9,6 +9,8 @@
 #include <signal.h>
 #include <time.h>
 
+
+
 #define BAUD 9600
 
 volatile int stop_thread1 = 0;
