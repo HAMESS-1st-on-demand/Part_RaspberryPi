@@ -12,7 +12,11 @@ include(CPack)
 # add_executable(Proj1 ./serial_with_raspberry/looptest.c)
 # add_executable(Proj1 ./serial_with_raspberry/termioreceive.c)
 # add_executable(Proj1 termiouart3.c)
-add_executable(Proj1 ./integration/test_uart.c)
+
+add_library(SI ./integration/SI.c ./integration/SI.h)
+
+add_executable(Proj1 ./integration/test_uart.c ./integration)
+target_link_libraries(Proj1 SI)
 target_link_libraries(Proj1 wiringPi)
 target_link_libraries(Proj1 bcm2835)
 target_link_libraries(Proj1 pthread)
