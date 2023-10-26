@@ -43,19 +43,6 @@ void signal_handler(int signum) {
     return;
 }
 
-// 시간을 재는 함수
-// utility로 옮길 예정
-// char* get_current_time() {
-//     static char buffer[100];
-//     time_t rawtime;
-//     struct tm * timeinfo;
-
-//     time(&rawtime);
-//     timeinfo = localtime(&rawtime);
-//     strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", timeinfo);
-
-//     return buffer;
-// }
 
 char* get_current_time() {
     static char buffer[100];
@@ -89,27 +76,53 @@ void* func1(void* arg) {
     int log_fd = open("../file1.txt", O_WRONLY | O_CREAT | O_APPEND, 0666); // log file을 위한 descriptor
     if (log_fd == -1) { // log file descriptor 못 쓰면 반환한다. 
         log_message("Failed to open file.\n");
+        // thread1_alive = 0로 thread 멈췄다고 알려준다.
+        thread1_alive = 0;
+        log_message("Thread 1 is terminated.\n");
         return NULL;
     }
     dprintf(log_fd, "[%s] [Thread %lu] start\n", get_current_time(), pthread_self());
+
+    int times = 0;
     // 멈춤 signal이 들어오지 않으면
     while(!stop_thread1) { 
         // 센서 값들을 확인하고 Check
 
         // mutex 값 확인 
-        pthread_mutex_lock(&mutex);
-        if(0 < sd.changed && sd.changed < 30) // 메시지 안 보낸 것
+        // 일정 시간 마다 살아있음을 보여주는 코드 작성
+        if(millis() - times >= 1000)
         {
-            ++(sd.changed);
+            dprintf(log_fd, "[%s] [Thread %lu] alive : %d\n", get_current_time(), pthread_self(), times);
+            times = millis();
+
+            // 1초마다 진행
+            pthread_mutex_lock(&mutex);
+            if(0 < sd.changed && sd.changed < 3) // 메시지 안 보낸 것
+            {
+                ++(sd.changed);
+            }
+            else{
+                sd.changed = 1;
+                // update the send data 
+                sprintf(sd.sbuf, "%s", "a\0");    
+                sd.SendMsg = strlen(sd.sbuf) + 1;
+                dprintf(log_fd, "[%s] [Thread %lu] send msg flag up : %s\n", get_current_time(), pthread_self(), sd.sbuf);
+            }
+            pthread_mutex_unlock(&mutex);
         }
-        else{
-            sd.changed = 1;
-            // update the send data 
-            sprintf(sd.sbuf, "%s", "a\0");    
-            sd.SendMsg = strlen(sd.sbuf) + 1;
-            dprintf(log_fd, "[%s] [Thread %lu] send msg flag up : %s\n", get_current_time(), pthread_self(), sd.sbuf);
-        }
-        pthread_mutex_unlock(&mutex);
+        // pthread_mutex_lock(&mutex);
+        // if(0 < sd.changed && sd.changed < 30) // 메시지 안 보낸 것
+        // {
+        //     ++(sd.changed);
+        // }
+        // else{
+        //     sd.changed = 1;
+        //     // update the send data 
+        //     sprintf(sd.sbuf, "%s", "a\0");    
+        //     sd.SendMsg = strlen(sd.sbuf) + 1;
+        //     dprintf(log_fd, "[%s] [Thread %lu] send msg flag up : %s\n", get_current_time(), pthread_self(), sd.sbuf);
+        // }
+        // pthread_mutex_unlock(&mutex);
         
         if(stop_thread1)
         {
@@ -130,22 +143,37 @@ void* func2(void* arg) {
     int log_fd = open("../file2.txt", O_WRONLY | O_CREAT | O_APPEND, 0666);
     if (log_fd == -1) {
         log_message("Failed to open file\n");
+        // thread2가 죽었다는 flag 작성
+        thread2_alive = 0;
+        log_message("Thread2 is terminated.\n");
         return NULL;
     }
     dprintf(log_fd, "[%s] [Thread %lu] start\n", get_current_time(), pthread_self());
-
-    int uart_fd = serialOpen("/dev/ttyS0", BAUD);
+    
+    // ttyS0 이 아닌 ttyUSB0 <= dmesg | tail로 확인
+    int uart_fd = serialOpen("/dev/ttyUSB0", BAUD);
     if(uart_fd == -1)
     {
         log_message("Device file open error!!\n");
+        // thread2 정리
+        close(log_fd);
+        thread2_alive = 0;
+        log_message("Thread2 is terminated.\n");
         return NULL;
     }
-
+    
+    int times = millis();
     while(!stop_thread2) {
         // 계속해서 값을 받는다. 
         // mutex 잠그고 값 확인
         char buf[65];
         unsigned len = 0; 
+        // 살아있다는 값 계속 전달 
+        if(millis() - times >= 1000)
+        {
+            dprintf(log_fd, "[%s] [Thread %lu] alive : %d\n", get_current_time(), pthread_self(), times);
+            times = millis();
+        }
         pthread_mutex_lock(&mutex);
         if(sd.changed > 0 && sd.SendMsg > 0)
         {
@@ -172,7 +200,7 @@ void* func2(void* arg) {
             buf[i] = serialGetchar(uart_fd);
             printf("===> Received : %d %c\n", buf[i], buf[i]);
             serialFlush(uart_fd);
-            dprintf(log_fd, "[%s] [Thread %lu] Received Msg trom Arduino : %d\n", get_current_time(), pthread_self(), i);
+            dprintf(log_fd, "[%s] [Thread %lu] Received Msg trom Arduino : %c\n", get_current_time(), pthread_self(), buf[0]);
         }
 
         if (stop_thread2) {
@@ -220,31 +248,18 @@ int main()
 
     while(1)
     {
-        // thread들이 살아있는지 주기적으로 메시지를 보낸다.
-        // if(pthread_kill(thread1, 0)!=0)
-        // {
-        //     log_message("thread1 부활");
-        //     pthread_join(thread1, NULL);
-        //     pthread_create(&thread1, NULL, func1, NULL);
-        // }
-        // if(pthread_kill(thread2, 0)!=0)
-        // {
-        //     log_message("thread2 부활");
-        //     pthread_join(thread2, NULL);
-        //     pthread_create(&thread2, NULL, func2, NULL);
-        // }
         if(!thread1_alive)
         {
             log_message("Thread1 is down. Restarting...\n");
             pthread_join(thread1, NULL);
-            pthread_create(&thread1, NULL, func1, NULL);
+            pthread_create(&thread1, NULL, &func1, NULL);
             thread1_alive = 1;
         }
         if(!thread2_alive)
         {
             log_message("Thread2 is down. Restarting...\n");
             pthread_join(thread2, NULL);
-            pthread_create(&thread2, NULL, func1, NULL);
+            pthread_create(&thread2, NULL, &func2, NULL);
             thread2_alive = 1;
         }
 
