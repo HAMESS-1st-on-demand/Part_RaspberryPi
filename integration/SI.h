@@ -17,6 +17,21 @@
 #define DELTA 40
 
 #define MAX_TIMINGS	85        // 최대 신호 추출 개수
+
+//센서별 임계값
+#define LIGHT_TH 200
+#define RAIN_TH 1700
+#define WATERLEV_TH 2800
+#define DUST_TH 2000
+#define TEMPER_TH1 30
+#define TEMPER_TH2 40
+
+//센서별 주기(millis 기준)
+#define LIGHT_PER 3000
+#define RAIN_PER 1000
+#define WATERLEV_PER 1000
+#define DUST_PER 5000
+#define TEMPER_PER 10000
        
 // SPI를 setup
 // SPI에 사용되는 CS, LED를 OUTPUT모드로 설정
