@@ -9,6 +9,7 @@
 #include <signal.h>
 #include <time.h>
 #include <sys/time.h>
+#include "SI.h" // 센서를 실제로 받는 코드 작성
 
 #define BAUD 9600
 
@@ -24,8 +25,8 @@ struct sharedData // 공유 자원을 위한 구조체
     unsigned char ArduinoIdle; 
     unsigned char SendMsg;
     unsigned char RcvMsg;
-    char sbuf; // charactor 배열이 아닌 값으로 변경 
-    char rbuf; // charactor 값으로 변경
+    char sbuf;
+    char rbuf;
     unsigned char status; // open/close
 };
 
@@ -59,7 +60,7 @@ char* get_current_time() {
 
 // log message 남기는 함수 
 void log_message(const char *format) {
-    int fd = open("../log.txt", O_WRONLY | O_CREAT | O_APPEND, 0666);
+    int fd = open("../log_main.txt", O_WRONLY | O_CREAT | O_APPEND, 0666);
     if(fd < 0){
         return;
     }
@@ -70,8 +71,8 @@ void log_message(const char *format) {
     return;
 }
 
-// 새로 추가한 값. 
-char makeMsg(char sensorInput) {
+// 센서의 값들을 메시지로 변환
+char makeMsg(unsigned char sensorInput) { // unsigned char로 변경
     char msg = 0;
     if (sensorInput & (1 << 4)) { // 침수
         msg |= 13 << 3;
@@ -89,7 +90,7 @@ char makeMsg(char sensorInput) {
 
 
 void* func1(void* arg) {
-    int log_fd = open("../file1.txt", O_WRONLY | O_CREAT | O_APPEND, 0666); // log file을 위한 descriptor
+    int log_fd = open("../log_thread1.txt", O_WRONLY | O_CREAT | O_APPEND, 0666); // log file을 위한 descriptor
     if (log_fd == -1) { // log file descriptor 못 쓰면 반환한다. 
         log_message("Failed to open file.\n");
         // thread1_alive = 0로 thread 멈췄다고 알려준다.
@@ -99,21 +100,110 @@ void* func1(void* arg) {
     }
     dprintf(log_fd, "%s %lu start\n", get_current_time(), pthread_self());
 
-    char buf;
-    unsigned char flags = 0;
-    int times = 0;
+    char sendBuf; // 보내는 값의 buffer : mutex 값 복사 
+    // 현재 시간, msg 주기, 센서 주기 값들
+    unsigned int now, msgTime, lightTime, rainTime, dustTime, waterTime, temperTime;
+    unsigned char flags = 0, buffer = 0; // 센서 판단 저장, sendflag
     // 멈춤 signal이 들어오지 않으면
+
+    // 초기화 및 동기화
+    now = lightTime = rainTime = dustTime = waterTime = temperTime = msgTime = millis();
+    
+    dprintf(log_fd, "%s %lu Before loop %lu\n", get_current_time(), pthread_self(), millis()-now);
+
     while(!stop_thread1) { 
-        // 센서 값들을 확인하고 Check
+        now = millis();
 
-        // mutex 값 확인 
-        // 일정 시간 마다 살아있음을 보여주는 코드 작성
-        if(millis() - times >= 500)
+        // 수위 감지 센서 추가
+        if(now - waterTime>=WATERLEV_PER)
         {
-            dprintf(log_fd, "%s %lu alive : %d\n", get_current_time(), pthread_self(), times);
-            times = millis();
+            waterTime = now;
+            int waterLev = readWaterLevelSensor();
+            printf("[%d] waterLev = %d\n", now/100,waterLev);
 
-            buf = makeMsg((char)8);
+            if(readWaterLevelSensor()>WATERLEV_TH){ //판단
+                printf("썬루프 열어\n");
+                buffer |= 1<<4; //buffer: 10000
+            }
+        }
+
+        dprintf(log_fd, "%s %lu 수위 센서%lu\n", get_current_time(), pthread_self(), millis()-now);
+
+        // 조도 센서 추가
+        if(now - lightTime>=LIGHT_PER)
+        {
+            lightTime = now;
+            int light = readLightSensor();
+            printf("[%d] light = %d\n", now/100,light);
+
+            if(readLightSensor()<LIGHT_TH) { //판단
+                printf("썬루프 어둡게\n"); // buffer가 아닌 LED 진행
+            }
+        }
+
+        dprintf(log_fd, "%s %lu 조도 센서 %lu\n", get_current_time(), pthread_self(), millis()-now);
+
+         // rain 센서추가 
+        if(now - rainTime>=RAIN_PER)
+        {
+            rainTime =now;
+            int rain = readRainSensor();
+            printf("[%d] rain = %d\n", now/100,rain);
+
+            if(readRainSensor()<RAIN_TH){ //판단
+                printf("썬루프 닫아\n");
+                buffer |= 1<<3; //buffer: 01000
+            }
+        }
+
+        dprintf(log_fd, "%s %lu rain 센서%lu\n", get_current_time(), pthread_self(), millis()-now);
+
+        // 미세먼지 센서 추가
+        if(now - dustTime>=DUST_PER)
+        {
+            dustTime=now;
+            int dust = readDustSensor();
+            printf("[%d] dust = %d\n", now/100,dust);
+            
+            if(readDustSensor()>DUST_TH){ //판단
+                printf("썬루프 닫아\n");
+                buffer |= 1<<2; //buffer: 00100
+            }
+        }
+
+        dprintf(log_fd, "%s %lu 미세먼지 센서%lu\n", get_current_time(), pthread_self(), millis() - now);
+
+        // 온습도 센서 추가
+        if(now - temperTime>=TEMPER_PER)
+        {
+            temperTime = now;
+            int temper1 = readDHTSensor(DHT_PIN1);        // 10번 핀으로부터 데이터를 읽음 -> 실내온도
+            int temper2 = readDHTSensor(DHT_PIN2);        // 11번 핀으로부터 데이터를 읽음 -> 실외 온도
+
+            if(temper1 ==-1||temper2 ==-1){
+                printf("DHT data not good\n");
+                continue;
+            }
+            printf("[%d] temper1 = %d, temper2 = %d \n", now/10000,temper1,temper2);
+
+            if(temper1<temper2&&temper2>TEMPER_TH1){ //판단
+                printf("썬루프 닫아");
+                buffer |= 1<<1; //buffer: 00010
+            }
+            else if(temper1>temper2&&temper1>TEMPER_TH2){
+                printf("썬루프 열어");
+                buffer |= 1; 
+            }
+        }
+
+        dprintf(log_fd, "%s %lu 온습도 센서%lu\n", get_current_time(), pthread_self(), millis() - now);
+        // 일정 시간 마다 살아있음을 보여주는 코드 작성
+        if(millis() - msgTime >= 700)
+        {
+            dprintf(log_fd, "%s %lu alive : %d\n", get_current_time(), pthread_self(), msgTime);
+            msgTime = millis();
+
+            sendBuf = makeMsg(buffer);
             // 1초마다 진행
             pthread_mutex_lock(&mutex);
             if(0 < sd.changed && sd.changed < 3) // 메시지 안 보낸 것
@@ -123,14 +213,13 @@ void* func1(void* arg) {
             else{
                 sd.changed = 1;
                 // update the send data 
-                if((int)buf!=0)
+                if((int)sendBuf!=0)
                 {
-                    sd.sbuf = buf;  
+                    sd.sbuf = sendBuf;  
                     sd.SendMsg = 1;
                     dprintf(log_fd, "%s %lu send msg flag up : %d\n", get_current_time(), pthread_self(), (int)sd.sbuf);
                 }
             }
-
             pthread_mutex_unlock(&mutex);
         }
         if(stop_thread1)
@@ -141,6 +230,7 @@ void* func1(void* arg) {
             log_message("Thread 1 is terminated.\n");
             break;
         }
+        dprintf(log_fd, "%s %lu delta Time Between loop-start and loop-end: %lu\n", get_current_time(), pthread_self(), millis()-now);
     }
     close(log_fd);
     thread1_alive = 0;
@@ -149,7 +239,7 @@ void* func1(void* arg) {
 }
 
 void* func2(void* arg) {
-    int log_fd = open("../file2.txt", O_WRONLY | O_CREAT | O_APPEND, 0666);
+    int log_fd = open("../log_thread2.txt", O_WRONLY | O_CREAT | O_APPEND, 0666);
     if (log_fd == -1) {
         log_message("Failed to open file\n");
         // thread2가 죽었다는 flag 작성
@@ -234,6 +324,14 @@ int main()
     log_message("Start\n");
     pthread_t thread1, thread2;
 
+    // setWiringPi로 gpio on
+    if(setWiringPi()==-1) {
+        log_message("Failed to setup WiringPi\n");
+        return -1;
+    }
+    else{
+        log_message("Success to setup WiringPi\n");
+    }
     pthread_mutex_init(&mutex, NULL); // 뮤텍스 초기화
     struct sigaction sa;
     sa.sa_handler = signal_handler;
