@@ -124,13 +124,13 @@ int main()
     while(1)
     {
         // thread들이 살아있는지 주기적으로 메시지를 보낸다.
-        if(pthread_kill(thread1, 0)==1)
+        if(pthread_kill(thread1, 0)!=0)
         {
             log_message("thread1 부활");
             pthread_join(thread1, NULL);
             pthread_create(&thread1, NULL, func1, NULL);
         }
-        if(pthread_kill(thread2, 0)==1)
+        if(pthread_kill(thread2, 0)!=0)
         {
             log_message("thread2 부활");
             pthread_join(thread2, NULL);
@@ -143,6 +143,8 @@ int main()
 
     pthread_join(thread1, NULL);
     pthread_join(thread2, NULL);
+
+    pthread_mutex_destroy(&mutex); 
 
     log_message("End");
 
