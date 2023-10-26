@@ -53,7 +53,7 @@ char* get_current_time() {
     timeinfo = localtime(&tv.tv_sec); // 현재 시간을 초 단위로 얻음
 
     strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", timeinfo); // 날짜와 시간 형식화
-    snprintf(buffer + strlen(buffer), sizeof(buffer) - strlen(buffer), ".%06ld", tv.tv_usec); // 마이크로초 추가
+    snprintf(buffer + strlen(buffer), sizeof(buffer) - strlen(buffer), " %06ld", tv.tv_usec); // 마이크로초 추가
 
     return buffer;
 }
@@ -65,8 +65,8 @@ void log_message(const char *format) {
     if(fd < 0){
         return;
     }
-    dprintf(fd, "[%s] [Thread %lu] : %s\n", get_current_time(), pthread_self(), format);
-    printf("[%s] [Thread %lu] : %s", get_current_time(), pthread_self(), format);
+    dprintf(fd, "%s %lu : %s\n", get_current_time(), pthread_self(), format);
+    printf("%s %lu : %s", get_current_time(), pthread_self(), format);
     printf("\n");
     close(fd);
     return;
@@ -81,7 +81,7 @@ void* func1(void* arg) {
         log_message("Thread 1 is terminated.\n");
         return NULL;
     }
-    dprintf(log_fd, "[%s] [Thread %lu] start\n", get_current_time(), pthread_self());
+    dprintf(log_fd, "%s %lu start\n", get_current_time(), pthread_self());
 
     int times = 0;
     // 멈춤 signal이 들어오지 않으면
@@ -92,7 +92,7 @@ void* func1(void* arg) {
         // 일정 시간 마다 살아있음을 보여주는 코드 작성
         if(millis() - times >= 1000)
         {
-            dprintf(log_fd, "[%s] [Thread %lu] alive : %d\n", get_current_time(), pthread_self(), times);
+            dprintf(log_fd, "%s %lu alive : %d\n", get_current_time(), pthread_self(), times);
             times = millis();
 
             // 1초마다 진행
@@ -104,29 +104,15 @@ void* func1(void* arg) {
             else{
                 sd.changed = 1;
                 // update the send data 
-                sprintf(sd.sbuf, "%s", "a\0");    
+                sprintf(sd.sbuf, "%s", "d\0");    
                 sd.SendMsg = strlen(sd.sbuf) + 1;
-                dprintf(log_fd, "[%s] [Thread %lu] send msg flag up : %s\n", get_current_time(), pthread_self(), sd.sbuf);
+                dprintf(log_fd, "%s %lu send msg flag up : %s\n", get_current_time(), pthread_self(), sd.sbuf);
             }
             pthread_mutex_unlock(&mutex);
         }
-        // pthread_mutex_lock(&mutex);
-        // if(0 < sd.changed && sd.changed < 30) // 메시지 안 보낸 것
-        // {
-        //     ++(sd.changed);
-        // }
-        // else{
-        //     sd.changed = 1;
-        //     // update the send data 
-        //     sprintf(sd.sbuf, "%s", "a\0");    
-        //     sd.SendMsg = strlen(sd.sbuf) + 1;
-        //     dprintf(log_fd, "[%s] [Thread %lu] send msg flag up : %s\n", get_current_time(), pthread_self(), sd.sbuf);
-        // }
-        // pthread_mutex_unlock(&mutex);
-        
         if(stop_thread1)
         {
-            dprintf(log_fd, "[%s] [Thread %lu] Take End signal\n", get_current_time(), pthread_self());
+            dprintf(log_fd, "%s %lu Take End signal\n", get_current_time(), pthread_self());
             close(log_fd);
             thread1_alive = 0;
             log_message("Thread 1 is terminated.\n");
@@ -148,7 +134,7 @@ void* func2(void* arg) {
         log_message("Thread2 is terminated.\n");
         return NULL;
     }
-    dprintf(log_fd, "[%s] [Thread %lu] start\n", get_current_time(), pthread_self());
+    dprintf(log_fd, "%s %lu start\n", get_current_time(), pthread_self());
     
     // ttyS0 이 아닌 ttyUSB0 <= dmesg | tail로 확인
     int uart_fd = serialOpen("/dev/ttyUSB0", BAUD);
@@ -171,7 +157,7 @@ void* func2(void* arg) {
         // 살아있다는 값 계속 전달 
         if(millis() - times >= 1000)
         {
-            dprintf(log_fd, "[%s] [Thread %lu] alive : %d\n", get_current_time(), pthread_self(), times);
+            dprintf(log_fd, "%s %lu alive : %d\n", get_current_time(), pthread_self(), times);
             times = millis();
         }
         pthread_mutex_lock(&mutex);
@@ -179,7 +165,7 @@ void* func2(void* arg) {
         {
             strcpy(buf, sd.sbuf);
             len = sd.SendMsg;
-            dprintf(log_fd, "[%s] [Thread %lu] send msg copy : %d\n", get_current_time(), pthread_self(), len);
+            dprintf(log_fd, "%s %lu send msg copy : %d\n", get_current_time(), pthread_self(), len);
             sd.changed = 0;
             sd.SendMsg = 0;
             memset(sd.sbuf, '\0', sizeof(sd.sbuf));
@@ -189,7 +175,7 @@ void* func2(void* arg) {
         if(len > 0) // sd.SendMsg => len 공유 자원에 접근하지 않도록 수정
         {
             for(int i=0;i<len;++i)serialPutchar(uart_fd, buf[i]);
-            dprintf(log_fd, "[%s] [Thread %lu] Writing to Arduino: %d\n", get_current_time(), pthread_self(), buf[0]);
+            dprintf(log_fd, "%s %lu Writing to Arduino: %d\n", get_current_time(), pthread_self(), buf[0]);
         }
 
         delay(10);
@@ -200,11 +186,11 @@ void* func2(void* arg) {
             buf[i] = serialGetchar(uart_fd);
             printf("===> Received : %d %c\n", buf[i], buf[i]);
             serialFlush(uart_fd);
-            dprintf(log_fd, "[%s] [Thread %lu] Received Msg trom Arduino : %c\n", get_current_time(), pthread_self(), buf[0]);
+            dprintf(log_fd, "%s %lu Received Msg trom Arduino : %c\n", get_current_time(), pthread_self(), buf[0]);
         }
 
         if (stop_thread2) {
-            dprintf(log_fd, "[%s] [Thread %lu] Take End signal\n", get_current_time(), pthread_self());
+            dprintf(log_fd, "%s %lu Take End signal\n", get_current_time(), pthread_self());
             serialClose(uart_fd);
             close(log_fd);
             thread2_alive = 0;
