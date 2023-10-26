@@ -16,6 +16,8 @@ int setWiringPi(){
     if(wiringPiSPISetup(0, SPI_SPEED) == -1) return -1;
     pinMode(CS, OUTPUT);
     pinMode(LED, OUTPUT);
+    pinMode(SSR_STATE_LED_PIN, OUTPUT);
+    pinMode(TINTING_LED_PIN, OUTPUT);
 
     return 1;
 }

@@ -35,6 +35,10 @@ unsigned char threadEnable = 1; // thread를 살리는지 여부
 struct sharedData sd; // 공유 자원 정의
 pthread_mutex_t mutex; // mutex 객체
 
+
+unsigned char ssrStateFlag; //스마트 썬루프 On/Off 상태 변수
+unsigned char tintingFlag; //Tinting 상태 변수
+
 void signal_handler(int signum) {
     if (signum == SIGUSR1) {
         stop_thread1 = 1;
@@ -73,6 +77,20 @@ void log_message(const char *format) {
     return;
 }
 
+void ssrButtonInterrupt(void) {
+    if (digitalRead(SSR_STATE_BUTT_PIN) == LOW) {
+        ssrStateFlag = !ssrStateFlag;
+        digitalWrite(SSR_STATE_LED_PIN,ssrStateFlag);
+    }
+}
+
+void tintingButtonInterrupt(void) {
+    if (digitalRead(TINTING_BUTT_PIN) == LOW) {
+        tintingFlag = !tintingFlag;
+        digitalWrite(TINTING_LED_PIN,tintingFlag);
+    }
+}
+
 void* func1(void* arg) {
     int log_fd = open("../file1.txt", O_WRONLY | O_CREAT | O_APPEND, 0666); // log file을 위한 descriptor
     if (log_fd == -1) { // log file descriptor 못 쓰면 반환한다. 
@@ -90,12 +108,6 @@ void* func1(void* arg) {
 
     //센서 판단 저장 버퍼
     unsigned char buffer = 0;
-
-    //wiringPi init함수 (SI.h, SI.c에 정의되어있음)
-    if(setWiringPi()==-1) {
-        printf("Failed to setup WiringPi\n");
-        return -1;
-    }
 
     //각각 시간을 추척하기위한 초기화
     now = lightTime = rainTime = dustTime = waterTime = temperTime = msgTime = millis();
@@ -117,60 +129,64 @@ void* func1(void* arg) {
             }
         }
 
-        if(now - lightTime>=LIGHT_PER) //조도 센서
-        {
-            lightTime = now;
-            int light = readLightSensor();
-            printf("[%d] light = %d\n", now/100,light);
+        if(ssrStateFlag){ //SSR 기능이 켜져있을때만 센서 값 검사
+            if(now - lightTime>=LIGHT_PER) //조도 센서
+            {
+                lightTime = now;
+                int light = readLightSensor();
+                printf("[%d] light = %d\n", now/100,light);
 
-            if(readLightSensor()<LIGHT_TH) { //판단
-                printf("썬루프 어둡게\n");
+                if(readLightSensor()<LIGHT_TH) { //판단
+                    printf("썬루프 어둡게\n");
+                    digitalWrite(TINTING_LED_PIN,HIGH);
+                    tintingFlag=1;
+                }
             }
-        }
 
-        if(now - rainTime>=RAIN_PER) //비 센서
-        {
-            rainTime =now;
-            int rain = readRainSensor();
-            printf("[%d] rain = %d\n", now/100,rain);
+            if(now - rainTime>=RAIN_PER) //비 센서
+            {
+                rainTime =now;
+                int rain = readRainSensor();
+                printf("[%d] rain = %d\n", now/100,rain);
 
-            if(readRainSensor()<RAIN_TH){ //판단
-                printf("썬루프 닫아\n");
-                buffer |= 1<<3; //buffer: 01000
+                if(readRainSensor()<RAIN_TH){ //판단
+                    printf("썬루프 닫아\n");
+                    buffer |= 1<<3; //buffer: 01000
+                }
             }
-        }
 
-        if(now - dustTime>=DUST_PER) //미세먼지센서
-        {
-            dustTime=now;
-            int dust = readDustSensor();
-            printf("[%d] dust = %d\n", now/100,dust);
-            
-            if(readDustSensor()>DUST_TH){ //판단
-                printf("썬루프 닫아\n");
-                buffer |= 1<<2; //buffer: 00100
+            if(now - dustTime>=DUST_PER) //미세먼지센서
+            {
+                dustTime=now;
+                int dust = readDustSensor();
+                printf("[%d] dust = %d\n", now/100,dust);
+
+                if(readDustSensor()>DUST_TH){ //판단
+                    printf("썬루프 닫아\n");
+                    buffer |= 1<<2; //buffer: 00100
+                }
             }
-        }
 
-        if(now - temperTime>=TEMPER_PER) //온습도 센서
-        {
-            temperTime = now;
-            int temper1 = readDHTSensor(DHT_PIN1);        // 10번 핀으로부터 데이터를 읽음 -> 실내온도
-            int temper2 = readDHTSensor(DHT_PIN2);        // 11번 핀으로부터 데이터를 읽음 -> 실외 온도
+            if(now - temperTime>=TEMPER_PER) //온습도 센서
+            {
+                temperTime = now;
+                int temper1 = readDHTSensor(DHT_PIN1);        // 10번 핀으로부터 데이터를 읽음 -> 실내온도
+                int temper2 = readDHTSensor(DHT_PIN2);        // 11번 핀으로부터 데이터를 읽음 -> 실외 온도
 
-            if(temper1 ==-1||temper2 ==-1){
-                printf("DHT data not good\n");
-                continue;
-            }
-            printf("[%d] temper1 = %d, temper2 = %d \n", now/10000,temper1,temper2);
+                if(temper1 ==-1||temper2 ==-1){
+                    printf("DHT data not good\n");
+                    continue;
+                }
+                printf("[%d] temper1 = %d, temper2 = %d \n", now/10000,temper1,temper2);
 
-            if(temper1<temper2&&temper2>TEMPER_TH1){ //판단
-                printf("썬루프 닫아");
-                buffer |= 1<<1; //buffer: 00010
-            }
-            else if(temper1>temper2&&temper1>TEMPER_TH2){
-                printf("썬루프 열어");
-                buffer |= 1; 
+                if(temper1<temper2&&temper2>TEMPER_TH1){ //판단
+                    printf("썬루프 닫아");
+                    buffer |= 1<<1; //buffer: 00010
+                }
+                else if(temper1>temper2&&temper1>TEMPER_TH2){
+                    printf("썬루프 열어");
+                    buffer |= 1; 
+                }
             }
         }
 
@@ -305,6 +321,21 @@ int main()
     sigemptyset(&sa.sa_mask);
     sigaction(SIGUSR1, &sa, NULL);
     sigaction(SIGUSR2, &sa, NULL);
+
+    //스레드1에서 사용하는 핀에 대한 wiringPi init함수 (SI.h, SI.c에 정의되어있음)
+    if(setWiringPi()==-1) {
+        printf("Failed to setup WiringPi\n");
+        return -1;
+    }
+    //스레드 1에서 사용할 버튼 인터럽트 설정
+    if (wiringPiISR(SSR_STATE_BUTT_PIN, INT_EDGE_FALLING, &ssrButtonInterrupt) < 0) {
+        fprintf(stderr, "인터럽트 핸들러 설정 실패\n");
+        return 1;
+    }
+    if (wiringPiISR(TINTING_BUTT_PIN, INT_EDGE_FALLING, &tintingButtonInterrupt) < 0) {
+        fprintf(stderr, "인터럽트 핸들러 설정 실패\n");
+        return 1;
+    }
 
     if (pthread_create(&thread1, NULL, &func1, NULL)) {
         log_message("Error creating thread 1\n");
