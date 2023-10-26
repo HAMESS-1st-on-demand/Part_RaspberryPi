@@ -11,6 +11,11 @@
 #define DHT_PIN1    10      // 온습도 센서1 10번 pin
 #define DHT_PIN2    11      // 온습도 센서2 11번 pin
 
+#define SSR_STATE_LED_PIN 26
+#define TINTING_LED_PIN 27
+#define SSR_STATE_BUTT_PIN 28
+#define TINTING_BUTT_PIN 29
+
 //For DustSensor
 #define SAMPLINGTIME 280
 #define LED 0 //미세먼지 측정LED
