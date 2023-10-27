@@ -20,7 +20,9 @@ int setWiringPi(){
     pinMode(TINTING_LED_PIN, OUTPUT);
     pinMode(SSR_STATE_BUTT_PIN,INPUT);
     pinMode(TINTING_BUTT_PIN,INPUT);
-
+    
+    digitalWrite(SSR_STATE_LED_PIN,LOW);
+    digitalWrite(TINTING_LED_PIN,LOW);
     return 1;
 }
 

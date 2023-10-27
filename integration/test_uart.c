@@ -36,8 +36,12 @@ unsigned char threadEnable = 1; // thread를 살리는지 여부
 struct sharedData sd; // 공유 자원 정의
 pthread_mutex_t mutex; // mutex 객체
 
-unsigned char ssrStateFlag=1; //스마트 썬루프 On/Off 상태 변수
+unsigned char ssrStateFlag; //스마트 썬루프 On/Off 상태 변수
 unsigned char tintingFlag; //Tinting 상태 변수
+
+//인터럽트 딜레이 변수
+unsigned int ISR1Time=0;
+unsigned int ISR2Time=0;
 
 void signal_handler(int signum) {
     if (signum == SIGUSR1) {
@@ -95,17 +99,27 @@ char makeMsg(unsigned char sensorInput) { // unsigned char로 변경
 
 // ssrButton에 대한 interrupt
 void ssrButtonInterrupt(void) {
-    if (digitalRead(SSR_STATE_BUTT_PIN) == LOW) {
-        ssrStateFlag = !ssrStateFlag;
-        digitalWrite(SSR_STATE_LED_PIN,ssrStateFlag);
+    if(millis()-ISR1Time>1000){
+        if (digitalRead(SSR_STATE_BUTT_PIN) == LOW) {
+            ssrStateFlag = !ssrStateFlag;
+            printf("ssrStateFlag: %d\n",ssrStateFlag);
+            if(ssrStateFlag) digitalWrite(SSR_STATE_LED_PIN,HIGH);
+            else digitalWrite(SSR_STATE_LED_PIN,LOW);
+        }
+        ISR1Time = millis();
     }
 }
 
 // tintingButton에 대한 interrupt
 void tintingButtonInterrupt(void) {
-    if (digitalRead(TINTING_BUTT_PIN) == LOW) {
-        tintingFlag = !tintingFlag;
-        digitalWrite(TINTING_LED_PIN,tintingFlag);
+    if(millis()-ISR2Time>1000){
+        if (digitalRead(TINTING_BUTT_PIN) == LOW) {
+            tintingFlag = !tintingFlag;
+            printf("tintingFlag: %d\n",tintingFlag);
+            if(tintingFlag) digitalWrite(TINTING_LED_PIN,HIGH);
+            else digitalWrite(TINTING_LED_PIN,LOW);
+        }
+        ISR2Time = millis();
     }
 }
 
@@ -141,7 +155,7 @@ void* func1(void* arg) {
             int waterLev = readWaterLevelSensor();
             printf("[%d] waterLev = %d\n", now/100,waterLev);
 
-            if(readWaterLevelSensor()>WATERLEV_TH){ //판단
+            if(waterLev>WATERLEV_TH){ //판단
                 // printf("썬루프 열어\n");
                 buffer |= 1<<4; //buffer: 10000
             }
@@ -161,8 +175,10 @@ void* func1(void* arg) {
                 int light = readLightSensor();
                 printf("[%d] light = %d\n", now/100,light);
 
-                if(readLightSensor()<LIGHT_TH) { //판단
-                    printf("썬루프 어둡게\n"); // buffer가 아닌 LED 진행
+                if(light<LIGHT_TH) { //판단
+                    //printf("썬루프 어둡게\n"); // buffer가 아닌 LED 진행
+                    tintingFlag = 1;
+                    digitalWrite(TINTING_LED_PIN,HIGH);
                 }
                 dprintf(log_fd, "%s %lu 조도 센서 %d\n", get_current_time(), pthread_self(), (int)buffer);
             }
@@ -174,7 +190,7 @@ void* func1(void* arg) {
                 int rain = readRainSensor();
                 printf("[%d] rain = %d\n", now/100,rain);
 
-                if(readRainSensor()<RAIN_TH){ //판단
+                if(rain<RAIN_TH){ //판단
                     // printf("썬루프 닫아\n");
                     buffer |= 1<<3; //buffer: 01000
                 }
@@ -189,8 +205,8 @@ void* func1(void* arg) {
                 int dust = readDustSensor();
                 printf("[%d] dust = %d\n", now/100,dust);
                 
-                if(readDustSensor()>DUST_TH){ //판단
-                    printf("썬루프 닫아\n");
+                if(dust>DUST_TH){ //판단
+                    //printf("썬루프 닫아\n");
                     buffer |= 1<<2; //buffer: 00100
                 }
                 // To do : 썬루프 열어야하는 로직 필요
@@ -211,11 +227,11 @@ void* func1(void* arg) {
                 printf("[%d] temper1 = %d, temper2 = %d \n", now/10000,temper1,temper2);
 
                 if(temper1<temper2&&temper2>TEMPER_TH1){ //판단
-                    printf("썬루프 닫아");
+                    //printf("썬루프 닫아");
                     buffer |= 1<<1; //buffer: 00010
                 }
                 else if(temper1>temper2&&temper1>TEMPER_TH2){
-                    printf("썬루프 열어");
+                    //printf("썬루프 열어");
                     buffer |= 1; 
                 }
                 dprintf(log_fd, "%s %lu 온습도 센서 %d\n", get_current_time(), pthread_self(), (int)buffer);
@@ -356,6 +372,24 @@ int main()
     else{
         log_message("Success to setup WiringPi\n");
     }
+
+    if (wiringPiISR(SSR_STATE_BUTT_PIN, INT_EDGE_FALLING, &ssrButtonInterrupt) < 0) {
+        log_message("인터럽트 핸들러 1 설정 실패\n");
+        return 1;
+    }
+    else
+    {
+        log_message("인터럽트 핸들러 1 설정\n");
+    }
+    if (wiringPiISR(TINTING_BUTT_PIN, INT_EDGE_FALLING, &tintingButtonInterrupt) < 0) {
+        log_message("인터럽트 핸들러 2 설정 실패\n");
+        return 1;
+    }
+    else{
+        log_message("인터럽트 핸들러 2 설정\n");
+    }
+
+
     pthread_mutex_init(&mutex, NULL); // 뮤텍스 초기화
     struct sigaction sa;
     sa.sa_handler = signal_handler;
