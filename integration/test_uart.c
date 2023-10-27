@@ -158,41 +158,39 @@ void* func1(void* arg) {
     
     dprintf(log_fd, "%s %lu Before loop %d\n", get_current_time(), pthread_self(), now);
 
-    while(!stop_thread1&&piStateFlag) { 
+    while(!stop_thread1&&piStateFlag) {
         now = millis();
-
         // 수위 감지 센서 추가
         if(now - waterTime>=WATERLEV_PER)
         {
             waterTime = now;
             int waterLev = readWaterLevelSensor();
-            printf("[%d] waterLev = %d\n", now/100,waterLev);
+            //printf("[%d] waterLev = %d\n", now/100,waterLev);
 
-            if(waterLev>WATERLEV_TH){ //판단
+            if((!sd.status) && (waterLev>WATERLEV_TH)){ //판단
                 // printf("썬루프 열어\n");
                 buffer |= 1<<4; //buffer: 10000
             }
-            // To do : 썬루프 닫아야하는 로직 필요
             dprintf(log_fd, "%s %lu 수위 센서 %d\n", get_current_time(), pthread_self(), (int)buffer);
         }
 
-        if(ssrStateFlag){
-            // SSR 기능이 켜져있을 때만 센서 값 검사
-
-            // 침수 센서 이외의 센서 추가
-
+        if(ssrStateFlag){ // SSR 기능이 켜져있을 때만 센서 값 검사
             // 조도 센서 추가
             if(now - lightTime>=LIGHT_PER)
             {
                 lightTime = now;
                 int light = readLightSensor();
-                printf("[%d] light = %d\n", now/100,light);
+                //printf("[%d] light = %d\n", now/100,light);
 
-                if(light<LIGHT_TH) { //판단
+                if((!tintingFlag) && light<LIGHT_TH) { //판단
                     //printf("썬루프 어둡게\n"); // buffer가 아닌 LED 진행
                     tintingFlag = 1;
                     digitalWrite(TINTING_LED_PIN,HIGH);
+                } else if((tintingFlag) && light>LIGHT_TH+500){ //썬루프 투명하게하는 로직
+                    tintingFlag = 0;
+                    digitalWrite(TINTING_LED_PIN,LOW);
                 }
+                
                 dprintf(log_fd, "%s %lu 조도 센서 %d\n", get_current_time(), pthread_self(), (int)buffer);
             }
         
@@ -203,11 +201,14 @@ void* func1(void* arg) {
                 int rain = readRainSensor();
                 printf("[%d] rain = %d\n", now/100,rain);
 
-                if(rain<RAIN_TH){ //판단
+                if((sd.status) &&rain<RAIN_TH){ //판단
                     // printf("썬루프 닫아\n");
                     buffer |= 1<<3; //buffer: 01000
                 }
-                // To do : 썬루프 열어야하는 로직 필요
+                else if((!sd.status) &&rain>RAIN_TH+1000){ //썬루프 여는 로직
+                    buffer &= !(1<<3); //buffer: 01000
+                }
+                
                 dprintf(log_fd, "%s %lu rain 센서 %d\n", get_current_time(), pthread_self(), (int)buffer);
             }
 
@@ -218,11 +219,13 @@ void* func1(void* arg) {
                 int dust = readDustSensor();
                 printf("[%d] dust = %d\n", now/100,dust);
                 
-                if(dust>DUST_TH){ //판단
+                if((sd.status) && dust>DUST_TH){ //판단
                     //printf("썬루프 닫아\n");
                     buffer |= 1<<2; //buffer: 00100
+                }else if((!sd.status) && dust<DUST_TH-1000){ //썬루프 여는 로직
+                    buffer &= !(1<<2);
                 }
-                // To do : 썬루프 열어야하는 로직 필요
+
                 dprintf(log_fd, "%s %lu 미세먼지 센서 %d\n", get_current_time(), pthread_self(), (int)buffer);
             }
         
@@ -239,11 +242,11 @@ void* func1(void* arg) {
                 }
                 printf("[%d] temper1 = %d, temper2 = %d \n", now/10000,temper1,temper2);
 
-                if(temper1<temper2&&temper2>TEMPER_TH1){ //판단
+                if((sd.status) && temper1<temper2&&temper2>TEMPER_TH1){ //판단
                     //printf("썬루프 닫아");
                     buffer |= 1<<1; //buffer: 00010
                 }
-                else if(temper1>temper2&&temper1>TEMPER_TH2){
+                else if((!sd.status) && temper1>temper2&&temper1>TEMPER_TH2){
                     //printf("썬루프 열어");
                     buffer |= 1; 
                 }
