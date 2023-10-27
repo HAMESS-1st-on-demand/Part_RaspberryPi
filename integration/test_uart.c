@@ -43,7 +43,7 @@ unsigned char piStateFlag=1; //스레드1 상태 변수
 //인터럽트 딜레이 변수
 unsigned int ISR1Time=0;
 unsigned int ISR2Time=0;
-unsigned int ISR3Time=0;
+unsigned int MainTime=0;
 
 void signal_handler(int signum) {
     if (signum == SIGUSR1) {
@@ -125,14 +125,14 @@ void tintingButtonInterrupt(void) {
     }
 }
 
-// 스레드1 on/off 에 대한 interrupt
+// 전체 프로그램 on/off 에 대한 interrupt
 void PIButtonInterrupt(void) {
-    if(millis()-ISR3Time>1000){
+    if(millis()-MainTime>1000){
         if (digitalRead(PI_ON_OFF_STATE_BUTT_PIN) == LOW) {
-            piStateFlag = !piStateFlag;
+            running = 0;
             printf("piStateFlag: %d\n",piStateFlag);
         }
-        ISR3Time = millis();
+        MainTime = millis();
     }
 }
 
@@ -147,19 +147,36 @@ void* func1(void* arg) {
     }
     dprintf(log_fd, "%s %lu start\n", get_current_time(), pthread_self());
 
-    char sendBuf; // 보내는 값의 buffer : mutex 값 복사 
+    char sendBuf, rcvBuf; // 보내는 값의 buffer : mutex 값 복사 
     // 현재 시간, msg 주기, 센서 주기 값들
-    unsigned int now, msgTime, lightTime, rainTime, dustTime, waterTime, temperTime;
-    unsigned char flags = 0, buffer = 0; // 센서 판단 저장, sendflag
+    unsigned int now, smsgTime, rmsgTime, lightTime, rainTime, dustTime, waterTime, temperTime;
+    unsigned char flags = 0, buffer = 0, MSB = 0, priority = 0, isOpened=0, isMoving=0, isObeyed = 0;; // 센서 판단 저장, sendflag
     // 멈춤 signal이 들어오지 않으면
 
     // 초기화 및 동기화
-    now = lightTime = rainTime = dustTime = waterTime = temperTime = msgTime = millis();
+    now = lightTime = rainTime = dustTime = waterTime = temperTime = smsgTime = rmsgTime = millis();
     
     dprintf(log_fd, "%s %lu Before loop %d\n", get_current_time(), pthread_self(), now);
 
-    while(!stop_thread1&&piStateFlag) { 
+    while(!stop_thread1) { 
         now = millis();
+
+        if(millis() - rmsgTime >= MSGTIME)
+        {
+            rmsgTime = millis();
+            pthread_mutex_lock(&mutex);
+
+            if(sd.RcvMsg == 1)
+            {
+                rcvBuf = sd.rbuf;
+                isOpened = sd.status;
+                isObeyed = sd.ArduinoIdle;
+                sd.RcvMsg = 0;
+            }
+            pthread_mutex_unlock(&mutex);
+            MSB = rcvBuf | (1 << 7);
+            dprintf(log_fd, "%s %lu SharedMemory Data => Complete: %c, Arduino status : %c, isOpened : %c\n", get_current_time(), pthread_self(), MSB, isObeyed, isOpened);
+        }
 
         // 수위 감지 센서 추가
         if(now - waterTime>=WATERLEV_PER)
@@ -186,13 +203,17 @@ void* func1(void* arg) {
             {
                 lightTime = now;
                 int light = readLightSensor();
-                printf("[%d] light = %d\n", now/100,light);
+                //printf("[%d] light = %d\n", now/100,light);
 
-                if(light<LIGHT_TH) { //판단
+                if((!tintingFlag) && light<LIGHT_TH) { //판단
                     //printf("썬루프 어둡게\n"); // buffer가 아닌 LED 진행
                     tintingFlag = 1;
                     digitalWrite(TINTING_LED_PIN,HIGH);
+                } else if((tintingFlag) && light>LIGHT_TH+500){ //썬루프 투명하게하는 로직
+                    tintingFlag = 0;
+                    digitalWrite(TINTING_LED_PIN,LOW);
                 }
+                
                 dprintf(log_fd, "%s %lu 조도 센서 %d\n", get_current_time(), pthread_self(), (int)buffer);
             }
         
@@ -203,11 +224,14 @@ void* func1(void* arg) {
                 int rain = readRainSensor();
                 printf("[%d] rain = %d\n", now/100,rain);
 
-                if(rain<RAIN_TH){ //판단
+                if((sd.status) &&rain<RAIN_TH){ //판단
                     // printf("썬루프 닫아\n");
                     buffer |= 1<<3; //buffer: 01000
                 }
-                // To do : 썬루프 열어야하는 로직 필요
+                else if((!sd.status) &&rain>RAIN_TH+1000){ //썬루프 여는 로직
+                    buffer &= !(1<<3); //buffer: 01000
+                }
+                
                 dprintf(log_fd, "%s %lu rain 센서 %d\n", get_current_time(), pthread_self(), (int)buffer);
             }
 
@@ -218,11 +242,13 @@ void* func1(void* arg) {
                 int dust = readDustSensor();
                 printf("[%d] dust = %d\n", now/100,dust);
                 
-                if(dust>DUST_TH){ //판단
+                if((sd.status) && dust>DUST_TH){ //판단
                     //printf("썬루프 닫아\n");
                     buffer |= 1<<2; //buffer: 00100
+                }else if((!sd.status) && dust<DUST_TH-1000){ //썬루프 여는 로직
+                    buffer &= !(1<<2);
                 }
-                // To do : 썬루프 열어야하는 로직 필요
+
                 dprintf(log_fd, "%s %lu 미세먼지 센서 %d\n", get_current_time(), pthread_self(), (int)buffer);
             }
         
@@ -239,11 +265,11 @@ void* func1(void* arg) {
                 }
                 printf("[%d] temper1 = %d, temper2 = %d \n", now/10000,temper1,temper2);
 
-                if(temper1<temper2&&temper2>TEMPER_TH1){ //판단
+                if((sd.status) && temper1<temper2&&temper2>TEMPER_TH1){ //판단
                     //printf("썬루프 닫아");
                     buffer |= 1<<1; //buffer: 00010
                 }
-                else if(temper1>temper2&&temper1>TEMPER_TH2){
+                else if((!sd.status) && temper1>temper2&&temper1>TEMPER_TH2){
                     //printf("썬루프 열어");
                     buffer |= 1; 
                 }
@@ -252,16 +278,18 @@ void* func1(void* arg) {
         }
 
         // 일정 시간 마다 살아있음을 보여주는 코드 작성
-        if(millis() - msgTime >= MSGTIME)
+        if(millis() - smsgTime >= MSGTIME)
         {
-            dprintf(log_fd, "%s %lu alive : %d\n", get_current_time(), pthread_self(), msgTime);
-            msgTime = millis();
+            dprintf(log_fd, "%s %lu alive : %d\n", get_current_time(), pthread_self(), smsgTime);
+            smsgTime = millis();
 
             sendBuf = makeMsg(buffer);
+
             // 1초마다 진행
             if(sendBuf != 0)
             {
                 pthread_mutex_lock(&mutex);
+                
 
                 if(sd.changed == 1)++(sd.changed);
                 else if(sd.changed == 0 || sd.changed == 2)
@@ -274,6 +302,7 @@ void* func1(void* arg) {
                 pthread_mutex_unlock(&mutex);
             }
         }
+
         if(stop_thread1)
         {
             dprintf(log_fd, "%s %lu Take End signal\n", get_current_time(), pthread_self());
@@ -282,8 +311,7 @@ void* func1(void* arg) {
             log_message("Thread 1 is terminated.\n");
             break;
         }
-        // dprintf(log_fd, "%s %lu delta Time Between loop-start and loop-end: %d\n", get_current_time(), pthread_self(), millis()-now);
-        if(millis() - now > 0)delay(millis() - now);
+        if(millis() - now < 100)delay(100 - millis() + now);
     }
     close(log_fd);
     thread1_alive = 0;
@@ -318,7 +346,7 @@ void* func2(void* arg) {
     while(!stop_thread2) {
         // 계속해서 값을 받는다. 
         // mutex 잠그고 값 확인
-        unsigned char sendflag;
+        unsigned char sendflag, MSB = 0, priority = 0, isOpened=0, isMoving=0, isObeyed = 0;
         char buf; 
         // 살아있다는 값 계속 전달 
         if(millis() - times >= 1000)
@@ -352,8 +380,22 @@ void* func2(void* arg) {
         {
             buf = serialGetchar(uart_fd);
             printf("===> Received : %d\n", (int)buf);
-            serialFlush(uart_fd);
             dprintf(log_fd, "%s %lu Received Msg trom Arduino : %d\n", get_current_time(), pthread_self(), (int)buf);
+            serialFlush(uart_fd);
+
+            MSB = buf | (1 << 7);
+            priority = buf | (15 << 3);
+            isOpened = buf | (1 << 2);
+            isMoving = buf | (1 << 1);
+            isObeyed = buf | 1;
+            // mutex
+            pthread_mutex_lock(&mutex);
+            sd.rbuf = buf;
+            sd.RcvMsg = 1;
+            sd.status = isOpened;
+            sd.ArduinoIdle = isObeyed;
+            pthread_mutex_unlock(&mutex);
+            dprintf(log_fd, "%s %lu Send Msg to SharedMemory => Complete : %c, Arduino status : %c, isOpened : %c\n", get_current_time(), pthread_self(), MSB, isObeyed, isOpened);
         }
 
         if (stop_thread2) {
@@ -409,7 +451,6 @@ int main()
         log_message("인터럽트 핸들러 3 설정\n");
     }
 
-
     pthread_mutex_init(&mutex, NULL); // 뮤텍스 초기화
     struct sigaction sa;
     sa.sa_handler = signal_handler;
@@ -432,7 +473,7 @@ int main()
         thread2_alive = 1;
     }
 
-    while(1)
+    while(running)
     {
         if(!thread1_alive)
         {
@@ -452,14 +493,17 @@ int main()
         sleep(1);
     }
 
+    log_message("Before Ending...\n");
     pthread_kill(thread1, SIGUSR1);
     pthread_kill(thread2, SIGUSR2);
 
     pthread_join(thread1, NULL);
     pthread_join(thread2, NULL);
-
+    log_message("Thread1 Terminated!\n");
+    log_message("Thread2 Terminated!\n");
     pthread_mutex_destroy(&mutex); 
 
+    log_message("Destroy mutex!\n");
     log_message("End\n");
 
     return 0;
