@@ -24,9 +24,9 @@
 #define MAX_TIMINGS	85        // 최대 신호 추출 개수
 
 //센서별 임계값
-#define LIGHT_TH 200
-#define RAIN_TH 1700
-#define WATERLEV_TH 2800
+#define LIGHT_TH 300
+#define RAIN_TH 2000
+#define WATERLEV_TH 2770
 #define DUST_TH 2000
 #define TEMPER_TH1 30
 #define TEMPER_TH2 40
