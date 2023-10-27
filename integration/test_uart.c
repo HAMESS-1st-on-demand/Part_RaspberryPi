@@ -38,10 +38,12 @@ pthread_mutex_t mutex; // mutex 객체
 
 unsigned char ssrStateFlag; //스마트 썬루프 On/Off 상태 변수
 unsigned char tintingFlag; //Tinting 상태 변수
+unsigned char piStateFlag=1; //스레드1 상태 변수
 
 //인터럽트 딜레이 변수
 unsigned int ISR1Time=0;
 unsigned int ISR2Time=0;
+unsigned int ISR3Time=0;
 
 void signal_handler(int signum) {
     if (signum == SIGUSR1) {
@@ -123,6 +125,17 @@ void tintingButtonInterrupt(void) {
     }
 }
 
+// 스레드1 on/off 에 대한 interrupt
+void PIButtonInterrupt(void) {
+    if(millis()-ISR3Time>1000){
+        if (digitalRead(PI_ON_OFF_STATE_BUTT_PIN) == LOW) {
+            piStateFlag = !piStateFlag;
+            printf("piStateFlag: %d\n",piStateFlag);
+        }
+        ISR3Time = millis();
+    }
+}
+
 void* func1(void* arg) {
     int log_fd = open("../log_thread1.txt", O_WRONLY | O_CREAT | O_APPEND, 0666); // log file을 위한 descriptor
     if (log_fd == -1) { // log file descriptor 못 쓰면 반환한다. 
@@ -145,7 +158,7 @@ void* func1(void* arg) {
     
     dprintf(log_fd, "%s %lu Before loop %d\n", get_current_time(), pthread_self(), now);
 
-    while(!stop_thread1) { 
+    while(!stop_thread1&&piStateFlag) { 
         now = millis();
 
         // 수위 감지 센서 추가
@@ -373,7 +386,7 @@ int main()
         log_message("Success to setup WiringPi\n");
     }
 
-    if (wiringPiISR(SSR_STATE_BUTT_PIN, INT_EDGE_FALLING, &ssrButtonInterrupt) < 0) {
+    if (wiringPiISR(SSR_STATE_BUTT_PIN, INT_EDGE_FALLING, ssrButtonInterrupt) < 0) {
         log_message("인터럽트 핸들러 1 설정 실패\n");
         return 1;
     }
@@ -381,12 +394,19 @@ int main()
     {
         log_message("인터럽트 핸들러 1 설정\n");
     }
-    if (wiringPiISR(TINTING_BUTT_PIN, INT_EDGE_FALLING, &tintingButtonInterrupt) < 0) {
+    if (wiringPiISR(TINTING_BUTT_PIN, INT_EDGE_FALLING, tintingButtonInterrupt) < 0) {
         log_message("인터럽트 핸들러 2 설정 실패\n");
         return 1;
     }
     else{
         log_message("인터럽트 핸들러 2 설정\n");
+    }
+    if (wiringPiISR(PI_ON_OFF_STATE_BUTT_PIN, INT_EDGE_FALLING, PIButtonInterrupt) < 0) {
+        log_message("인터럽트 핸들러 3 설정 실패\n");
+        return 1;
+    }
+    else{
+        log_message("인터럽트 핸들러 3 설정\n");
     }
 
 

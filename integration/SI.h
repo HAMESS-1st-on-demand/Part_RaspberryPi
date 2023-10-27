@@ -16,6 +16,9 @@
 #define SSR_STATE_BUTT_PIN 28
 #define TINTING_BUTT_PIN 29
 
+//스레드1(라즈베리파이)을 온오프하는 버튼
+#define PI_ON_OFF_STATE_BUTT_PIN 25
+
 //For DustSensor
 #define SAMPLINGTIME 280
 #define LED 0 //미세먼지 측정LED
