@@ -176,7 +176,7 @@ void* func1(void* arg) {
                 printf("[%d] light = %d\n", now/100,light);
 
                 if(light<LIGHT_TH) { //판단
-                    printf("썬루프 어둡게\n"); // buffer가 아닌 LED 진행
+                    //printf("썬루프 어둡게\n"); // buffer가 아닌 LED 진행
                     tintingFlag = 1;
                     digitalWrite(TINTING_LED_PIN,HIGH);
                 }
@@ -206,7 +206,7 @@ void* func1(void* arg) {
                 printf("[%d] dust = %d\n", now/100,dust);
                 
                 if(dust>DUST_TH){ //판단
-                    printf("썬루프 닫아\n");
+                    //printf("썬루프 닫아\n");
                     buffer |= 1<<2; //buffer: 00100
                 }
                 // To do : 썬루프 열어야하는 로직 필요
@@ -227,11 +227,11 @@ void* func1(void* arg) {
                 printf("[%d] temper1 = %d, temper2 = %d \n", now/10000,temper1,temper2);
 
                 if(temper1<temper2&&temper2>TEMPER_TH1){ //판단
-                    printf("썬루프 닫아");
+                    //printf("썬루프 닫아");
                     buffer |= 1<<1; //buffer: 00010
                 }
                 else if(temper1>temper2&&temper1>TEMPER_TH2){
-                    printf("썬루프 열어");
+                    //printf("썬루프 열어");
                     buffer |= 1; 
                 }
                 dprintf(log_fd, "%s %lu 온습도 센서 %d\n", get_current_time(), pthread_self(), (int)buffer);
